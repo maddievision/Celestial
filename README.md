@@ -30,5 +30,6 @@ For this, I took the levels and used `map2xml.rb` to convert them into JSON for 
 
 * Turning on debug mode on Celeste and poking around. (Done by editing your save file and enabling the flag)
 * [010 Hex Editor](https://www.sweetscape.com/010editor/) for poking in the .bin
+* The `rom.rb` and `binwriter.rb` files that I've built up over the past few years for quick ROM Hacking / reverse engineering projects.
 * [ILSpy .NET Decompiler Visual Code extension](https://marketplace.visualstudio.com/items?itemName=icsharpcode.ilspy-vscode) - when I realized this was a kind of tree structure I started digging into code. This was most useful for looking at `BinaryPacker` for the map files, and in general getting a feel for how things are structured. `AreaData` is a good birds eye view of all map data.
 * [Codepen](https://codepen.io/) for quick JS sketches.
