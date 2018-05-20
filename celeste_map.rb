@@ -96,7 +96,7 @@ class Element
   end
 end
 
-class CelesteMapReader
+class CelesteMap
   attr_accessor :debug, :rom, :package, :string_lookup, :root, :writer
   def initialize fn, fmt: :bin, debug: false
     @debug = debug

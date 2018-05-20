@@ -24,7 +24,7 @@ If you right click on a level it takes you to the level view, where you will als
 
 ![Screenshot of Level view for one of the Celestial Resort B-side levels](screenshot/levelview2.png)
 
-For this, I took the levels and used `map2xml.rb` to convert them into JSON for easier JS manipulation and wrote a viewer in p5.js. Here's an [example](http://deltabouche.com/celeste/json/0-Intro.json) of what one of these looks like, which again might get taken down if requested.
+For this, I took the levels and used `map2json.rb` to convert them into JSON for easier JS manipulation and wrote a viewer in p5.js. Here's an [example](http://deltabouche.com/celeste/json/0-Intro.json) of what one of these looks like, which again might get taken down if requested.
 
 # Tools used
 
