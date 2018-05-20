@@ -1,4 +1,4 @@
-# Celeste Reverse Engineering tools in Ruby
+# Celeste Reverse Engineering
 
 In the interest of sharing (which I wish I had done more of in my early ROM hacking days), I'm putting up my code/findings here in case anyone may find it useful. I might clean it up later, make things easier to use, more tools, documentation, but I don't have any real goals here.
 
