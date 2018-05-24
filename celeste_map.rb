@@ -1,8 +1,10 @@
-require './rom'
-require './binwriter'
+require 'bin_tools'
 require 'json'
+
 # Value Types
 # :boolean, :u8, :s16, :s32, :float, :lookup, :bin, :rle
+
+$ElementAutoParser = {}
 
 class Element
   attr_accessor :package, :name, :attributes, :children, :attributes_value_types;
@@ -37,18 +39,18 @@ class Element
       case value_type
       when :boolean
         if v
-          "#{pres}#{k}"
+          "#{pres}#{k}(#{value_type})"
         else
-          "#{pres}#{k}={#{v}}"
+          "#{pres}#{k}(#{value_type})={#{v}}"
         end
       when :u8, :s16, :s32, :float
-        "#{pres}#{k}={#{v}}"
+        "#{pres}#{k}(#{value_type})={#{v}}"
       when :lookup
-        "#{pres}#{k}=\"#{v}\""
+        "#{pres}#{k}(#{value_type})=\"#{v}\""
       when :bin
-        "#{pres}#{k}={bin#{v.inspect}}"
+        "#{pres}#{k}(#{value_type})={#{v.inspect}}"
       when :rle
-        "#{pres}#{k}={rle#{v.inspect}}"
+        "#{pres}#{k}(#{value_type})={#{v.inspect}}"
       end
     end.join("\n")
   end
@@ -64,6 +66,35 @@ class Element
   def [] name
     attributes[name.to_s]
   end
+  def set_attribute name, value_type, value
+    attributes[name.to_s] = value
+    attributes_value_types[name.to_s] = value_type
+  end
+  def self.auto_type num
+    if (num >= 0 && num <= 255)
+      :u8
+    elsif num >= -32768 && num < 32768
+      :s16
+    else
+      :s32
+    end
+  end
+
+  def set_num_attribute name, num
+    num = num.to_i(16) if num.is_a? String
+    set_attribute name, self.class.auto_type(num), num
+  end
+
+
+
+  def set_lookup_attribute name, str
+    set_attribute name, :lookup, str
+  end
+
+  def set_boolean_attribute name, val
+    set_attribute name, :boolean, val
+  end
+
   def to_h
     {
       'name' => name,
@@ -91,10 +122,43 @@ class Element
     element.package = obj['package']
     element.attributes = obj['attributes']
     element.attributes_value_types = obj['attribute_types']
-    element.children = obj['children'].map { |c| from_h c }
+    extra_children = []
+    element.children = obj['children'].map do |c|
+      parser = nil
+      c.each do |k, v|
+        parser = $ElementAutoParser[k] if $ElementAutoParser[k]
+      end
+      z = if parser
+        parser.from_h c
+      else
+        if c.has_key?('repeat')
+          clones = (0..c['repeat']).each do |rr|
+            nn = c.clone
+            nn['attributes'] = nn['attributes'].clone
+            nn['attribute_types'] = nn['attribute_types'].clone
+            c['repeat_attributes'].each do |k, v|
+              nn['attributes'][k] += (rr + 1) * v
+              nn['attribute_types'][k] = 's16'
+            end
+            extra_children << from_h(nn)
+          end
+        end
+        from_h c
+      end
+      if z.is_a? Array
+        z.each_with_index do |zz, i|
+          extra_children << zz if i > 0
+        end
+        z.first
+      else
+        z
+      end
+    end
+    element.children += extra_children
     element
   end
 end
+
 
 class CelesteMap
   attr_accessor :debug, :rom, :package, :string_lookup, :root, :writer
@@ -102,7 +166,7 @@ class CelesteMap
     @debug = debug
     case fmt
     when :bin
-      @rom = ROM.from_file(fn)
+      @rom = BinTools::Reader.from_file(fn)
       raise "Not a celeste map" unless rom.read_str_varlen == 'CELESTE MAP'
       @package = rom.read_str_varlen
       @string_lookup = (0...rom.read_u16_le).map { rom.read_str_varlen }
@@ -119,7 +183,7 @@ class CelesteMap
   end
 
   def write fn
-    @writer = BinWriter.new(fn)
+    @writer = BinTools::BinWriter.new(fn)
     @string_lookup = root.strings
     writer.write_str_varlen 'CELESTE MAP'
     writer.write_str_varlen root.package
@@ -290,3 +354,307 @@ class CelesteMap
     puts s if @debug
   end
 end
+
+class NodeElement < Element
+  def self.with_xy x, y
+    e = self.new
+    e.name = 'node'
+    e.set_num_attribute 'x', x
+    e.set_num_attribute 'y', y
+    e
+  end
+end
+
+class EntityElement < Element
+  def self.gen_id key
+    @gen_id = {} unless @gen_id
+    @gen_id[key] = 0 unless @gen_id[key]
+    @gen_id[key] = @gen_id[key] + 1
+    @gen_id[key]
+  end
+
+  def self.reset_id key
+    @gen_id = {} unless @gen_id
+    @gen_id[key] = 0
+  end
+
+  def set_gen_id key
+    set_num_attribute 'id', self.class.gen_id(key)
+  end  
+
+  def set_auto_name obj
+    self.name = obj['__entity']
+  end
+
+  def set_auto_num_attribute obj, name
+    set_num_attribute name, obj[name]
+  end
+
+  def set_auto_lookup_attribute obj, name
+    set_lookup_attribute name, obj[name]
+  end
+
+  def set_auto_boolean_attribute obj, name
+    set_boolean_attribute name, obj[name]
+  end
+
+  def set_auto_xy obj, oX = 0, oY = 0
+    x = obj['x']
+    y = obj['y']
+    x = x.to_i(16) if x.is_a? String
+    y = y.to_i(16) if y.is_a? String
+
+    set_num_attribute 'x', x + oX
+    set_num_attribute 'y', y + oY
+  end
+
+  def set_auto_width obj
+    set_auto_num_attribute obj, 'width'
+  end
+
+  def set_auto_height obj
+    set_auto_num_attribute obj, 'height'
+  end
+
+  def set_auto_wh obj
+    set_auto_width obj
+    set_auto_height obj
+  end
+
+  def set_origin x, y
+    set_num_attribute 'originX', x
+    set_num_attribute 'originY', y
+  end
+
+  def self.parse_player obj
+    e = self.new
+    e.set_auto_name obj
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_num_attribute 'width', 8
+    e.set_origin 4, 8
+    e
+  end
+
+  def self.parse_badeline_chaser obj
+    e = self.new
+    e.name = 'darkChaser'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_origin 4, 8
+    e
+  end
+
+  def self.parse_booster obj
+    e = self.new
+    e.set_auto_name obj
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_boolean_attribute obj, 'red'
+    e.set_origin 4, 4
+    e
+  end
+
+  def self.parse_move_block obj
+    e = self.new
+    e.name = 'moveBlock'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_wh obj
+    e.set_auto_lookup_attribute obj, 'direction'
+    e.set_auto_boolean_attribute obj, 'canSteer'
+    e.set_auto_boolean_attribute obj, 'fast'
+    e.set_origin 0, 0
+    e
+  end
+
+  def self.parse_black_gem obj
+    e = self.new
+    e.name = 'blackGem'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_boolean_attribute obj, 'removeCameraTriggers'
+    e.set_origin 6, 6
+    e
+  end
+
+  def self.parse_golden_berry obj
+    e = self.new
+    e.name = 'goldenBerry'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_origin 8, 8
+    e
+  end
+
+  def self.parse_dream_block obj
+    e = self.new
+    e.name = 'dreamBlock'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_wh obj
+    e.set_auto_boolean_attribute obj, 'fastMoving'
+    e.set_origin 0, 0    
+    e
+  end
+
+  def self.parse_kevin obj
+    e = self.new
+    e.name = 'crushBlock'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_wh obj
+    e.set_auto_lookup_attribute obj, 'axes'
+    e.set_auto_boolean_attribute obj, 'chillout'
+    e.set_origin 0, 0
+    e
+  end
+
+  def self.parse_water obj
+    e = self.new
+    e.name = 'water'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_wh obj
+    e.set_auto_boolean_attribute obj, 'steamy'
+    e.set_auto_boolean_attribute obj, 'hasBottom'
+    e.set_origin 0, 0
+    e
+  end
+
+  def self.parse_jump_thru obj
+    e = self.new
+    e.name = 'jumpThru'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_width obj
+    e.set_origin 0, 0
+    e
+  end
+
+  def self.parse_zip_mover obj
+    e = self.new
+    e.name = 'zipMover'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_wh obj
+    e.set_origin 0, 0
+    e.children << NodeElement.with_xy(obj['x2'], obj['y2'])
+    e
+  end
+
+  def self.parse_switch_gate obj
+    e = self.new
+    e.name = 'switchGate'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_wh obj
+    e.set_auto_boolean_attribute obj, 'persistent'
+    e.set_auto_lookup_attribute obj, 'sprite'
+    e.set_origin 0, 0
+    e.children << NodeElement.with_xy(obj['x2'], obj['y2'])
+    e
+  end
+
+  def self.parse_bumper obj
+    e = self.new
+    e.name = 'bigSpinner'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_origin 16, 16
+    e
+  end
+
+  def self.parse_cloud obj
+    e = self.new
+    e.set_auto_name obj
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_boolean_attribute obj, 'fragile'
+    e.set_origin 16, 0
+    e
+  end
+
+  def self.parse_spikes obj
+    e = self.new
+    e.name = 'spikes' + obj['direction']
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_auto_lookup_attribute obj, 'type'
+    case obj['direction']
+    when 'Up'
+      e.set_auto_width obj
+      e.set_origin 0, 4
+    when 'Down'
+      e.set_auto_width obj
+      e.set_origin 0, 0
+    when 'Left'
+      e.set_auto_height obj
+      e.set_origin 4, 0
+    when 'Right'
+      e.set_auto_height obj
+      e.set_origin 0, 0
+    end
+    e
+  end
+
+  def self.parse_touch_switch obj
+    e = self.new
+    e.name = 'touchSwitch'
+    e.set_gen_id 'entity'
+    e.set_auto_xy obj
+    e.set_origin 4, 4
+    e
+  end
+
+  def self.parse_spinner obj
+    nY = obj['nY'] || 1
+    nX = obj['nX'] || 1
+    dY = obj['dY'] || 16
+    dX = obj['dX'] || 16
+    elements = []
+    nY.times do |iY|
+      nX.times do |iX|
+        e = self.new
+        e.set_auto_name obj
+        e.set_gen_id 'entity'
+        e.set_auto_boolean_attribute obj, 'attachToSolid'
+        e.set_auto_xy obj, iX * dX, iY * dY
+        e.set_origin 8, 8
+        elements << e
+      end
+    end
+    elements
+  end
+
+  def self.from_h obj
+    self.send("parse_#{obj['__entity']}", obj)
+  end
+end
+
+$ElementAutoParser['__entity'] = EntityElement
+
+class SolidsElement < Element
+  def set_auto_xy obj, oX = 0, oY = 0
+    x = obj['offsetX'] || 0
+    y = obj['offsetY'] || 0
+    x = x.to_i(16) if x.is_a? String
+    y = y.to_i(16) if y.is_a? String
+
+    set_num_attribute 'offsetX', x + oX
+    set_num_attribute 'offsetY', y + oY
+  end
+
+  def self.from_h obj
+    e = self.new
+    e.name = 'solids'
+    e.set_auto_xy obj
+    inner = obj['map'].map do |str|
+      str.split('').map { |ch| ch.ord == 32 && '0'.ord || ch.ord } + [10]
+    end.flatten
+    e.set_attribute 'innerText', :rle, inner
+    e
+  end
+end
+
+$ElementAutoParser['__solids'] = SolidsElement

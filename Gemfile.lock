@@ -1,0 +1,13 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    bin_tools (0.0.3)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  bin_tools
+
+BUNDLED WITH
+   1.16.1
