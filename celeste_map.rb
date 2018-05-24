@@ -1,7 +1,6 @@
-require './rom'
-require './binwriter'
+require 'bin_tools'
 require 'json'
-require 'pry'
+
 # Value Types
 # :boolean, :u8, :s16, :s32, :float, :lookup, :bin, :rle
 
@@ -167,7 +166,7 @@ class CelesteMap
     @debug = debug
     case fmt
     when :bin
-      @rom = ROM.from_file(fn)
+      @rom = BinTools::Reader.from_file(fn)
       raise "Not a celeste map" unless rom.read_str_varlen == 'CELESTE MAP'
       @package = rom.read_str_varlen
       @string_lookup = (0...rom.read_u16_le).map { rom.read_str_varlen }
@@ -184,7 +183,7 @@ class CelesteMap
   end
 
   def write fn
-    @writer = BinWriter.new(fn)
+    @writer = BinTools::BinWriter.new(fn)
     @string_lookup = root.strings
     writer.write_str_varlen 'CELESTE MAP'
     writer.write_str_varlen root.package
@@ -271,8 +270,6 @@ class CelesteMap
     element.children.each do |child|
       write_element child
     end
-  rescue => e
-    binding.pry
   end
 
   def read_element pre=0
@@ -501,7 +498,7 @@ class EntityElement < Element
     e
   end
 
-  def self.parse_crush_block obj
+  def self.parse_kevin obj
     e = self.new
     e.name = 'crushBlock'
     e.set_gen_id 'entity'
